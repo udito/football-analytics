@@ -1,0 +1,8 @@
+# Ignore Python cache and virtualenv
+__pycache__/
+*.pyc
+.venv/
+.env
+.ipynb_checkpoints/
+data/*
+!data/.gitkeep
