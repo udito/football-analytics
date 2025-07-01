@@ -2,11 +2,6 @@ import os
 import json
 import psycopg2
 import boto3
-from dotenv import load_dotenv
-
-# === OPTIONAL: Load local .env if not running on EC2 ===
-if not os.getenv("RUNNING_ON_EC2"):
-    load_dotenv()
 
 # === Load secure parameters from AWS SSM Parameter Store ===
 ssm = boto3.client("ssm", region_name=os.getenv("AWS_REGION", "us-west-1"))

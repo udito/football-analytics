@@ -1,10 +1,14 @@
-FROM python:3.11-slim
+# docker/Dockerfile
+FROM python:3.10-slim
 
 WORKDIR /app
 
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./src/app /app
+# Copy source code
+COPY src/ ./src/
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Default command to run
+CMD ["python3", "src/app/load_from_s3.py"]
