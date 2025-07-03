@@ -24,12 +24,14 @@ jobs:
           --targets "Key=tag:PROJECT_NAME,Values=${{ secrets.PROJECT_NAME }}" \
           --parameters 'commands=[
             "export GHCR_PAT=$(aws ssm get-parameter --name \"/github/ghcr_pat\" --with-decryption --region '${{ secrets.AWS_REGION }}' --query \"Parameter.Value\" --output text)",
+            "export DATABASE_URL=$(aws ssm get-parameter --name \"/football/DATABASE_URL\" --with-decryption --region '${{ secrets.AWS_REGION }}' --query \"Parameter.Value\" --output text)",
             "echo $GHCR_PAT | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin",
             "docker stop ${{ secrets.CONTAINER_NAME }} || true",
             "docker rm ${{ secrets.CONTAINER_NAME }} || true",
             "docker pull ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main",
             "docker run -d --name ${{ secrets.CONTAINER_NAME }} \
               --restart unless-stopped \
+              -e DATABASE_URL=$DATABASE_URL \
               --health-cmd=\"curl -f http://localhost:8000/health || exit 1\" \
               --health-interval=30s \
               --health-timeout=10s \

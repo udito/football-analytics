@@ -2,12 +2,9 @@ from fastapi import FastAPI
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
-load_dotenv()
 
 app = FastAPI()
 
-# Read connection details from environment variable
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 @app.get("/")
