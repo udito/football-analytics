@@ -1,11 +1,15 @@
 from fastapi import FastAPI
-import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import boto3
+import os
 
 app = FastAPI()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Load DATABASE_URL from AWS SSM Parameter Store
+ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-west-1"))
+param = ssm.get_parameter(Name="/football/DATABASE_URL", WithDecryption=True)
+DATABASE_URL = param["Parameter"]["Value"]
 
 @app.get("/")
 def read_root():
@@ -26,3 +30,7 @@ def db_check():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
