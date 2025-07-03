@@ -2,13 +2,18 @@ import os
 import json
 import psycopg2
 import boto3
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 
 # === Load secure parameters from AWS SSM Parameter Store ===
 ssm = boto3.client("ssm", region_name=os.getenv("AWS_REGION", "us-west-1"))
 
 def get_ssm_param(name):
     response = ssm.get_parameter(Name=name, WithDecryption=True)
-    return response["Parameter"]["Value"]
+    return response["Parameter"]["Value"]   
 
 # Load secrets from SSM (fallback to env if not found)
 DATABASE_URL = os.getenv("DATABASE_URL") or get_ssm_param("/football/DATABASE_URL")
@@ -82,6 +87,7 @@ def load_matches():
                 season_id = comp["season_id"]
                 key = f"{S3_PREFIX}matches/{comp_id}/{season_id}.json"
 
+                print(f"Loading matches for competition {comp_id} season {season_id}...")
                 try:
                     data = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"])
                     for match in data:
@@ -97,6 +103,7 @@ def load_matches():
                             match["home_team"]["home_team_name"],
                             match["away_team"]["away_team_name"]
                         ))
+                        print(f"Inserted match {match['match_id']} for competition {comp_id} season {season_id}")
                 except Exception as e:
                     print(f"Failed to load matches from {key}: {e}")
 
@@ -121,6 +128,8 @@ def load_lineups():
                 season_id = comp["season_id"]
                 match_key = f"{S3_PREFIX}matches/{comp_id}/{season_id}.json"
 
+                print(f"Loading lineups for competition {comp_id} season {season_id}...")
+
                 try:
                     matches = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=match_key)["Body"])
                     for match in matches:
@@ -128,6 +137,7 @@ def load_lineups():
                         key = f"{S3_PREFIX}lineups/{match_id}.json"
                         data = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"])
 
+                        print(f"Loading lineups for match {match_id}...")
                         for team in data:
                             team_name = team["team_name"]
                             for player in team["lineup"]:
@@ -155,15 +165,19 @@ def load_events():
             """)
 
             competitions = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=f"{S3_PREFIX}competitions.json")["Body"])
+            total_comps = len(competitions)
 
-            for comp in competitions:
+            for comp_index, comp in enumerate(competitions):
                 comp_id = comp["competition_id"]
                 season_id = comp["season_id"]
+                print(f"Loading competition {comp_id} season {season_id} ({comp_index + 1}/{total_comps})...")
                 match_key = f"{S3_PREFIX}matches/{comp_id}/{season_id}.json"
 
                 try:
                     matches = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=match_key)["Body"])
-                    for match in matches:
+                    total_matches = len(matches)
+
+                    for match_index, match in enumerate(matches):
                         match_id = match["match_id"]
                         key = f"{S3_PREFIX}events/{match_id}.json"
                         data = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"])
@@ -178,11 +192,14 @@ def load_events():
                                 event.get("timestamp"),
                                 event.get("type", {}).get("name")
                             ))
+
+                        percent = ((match_index + 1) / total_matches) * 100
+                        print(f"Inserted events for match {match_id} ({match_index + 1}/{total_matches}) - {percent:.2f}% complete")
+
                 except Exception as e:
                     print(f"Failed to load events for match {match_id}: {e}")
 
     print("Done: events loaded.")
-
 # === CLI loader selector ===
 if __name__ == "__main__":
     import argparse
