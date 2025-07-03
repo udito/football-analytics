@@ -25,3 +25,7 @@ def db_check():
         return {"db_status": "Connected", "result": result}
     except Exception as e:
         return {"db_status": "Error", "detail": str(e)}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}

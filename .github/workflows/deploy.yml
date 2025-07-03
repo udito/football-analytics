@@ -9,25 +9,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Assume EC2 SSM IAM role
+    - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-1
+        aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Run docker container via SSM
+    - name: Deploy Docker image on EC2 via SSM
       run: |
         aws ssm send-command \
           --document-name "AWS-RunShellScript" \
           --comment "Deploy Docker container from GHCR" \
-          --targets "Key=tag:Project,Values=football-analytics-dev" \
+          --targets "Key=tag:PROJECT_NAME,Values=${{ secrets.PROJECT_NAME }}" \
           --parameters 'commands=[
-            "docker stop football || true",
-            "docker rm football || true",
-            "docker pull ghcr.io/${{ github.repository }}:latest",
-            "docker run -d --name football ghcr.io/${{ github.repository }}:latest"
+            "docker stop  ${{ secrets.CONTAINER_NAME }} || true",
+            "docker rm  ${{ secrets.CONTAINER_NAME }} || true",
+            "docker pull ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main",
+            "docker run -d --name ${{ secrets.CONTAINER_NAME }} \
+              --restart unless-stopped \
+              --health-cmd=\"curl -f http://localhost:8000/health || exit 1\" \
+              --health-interval=30s \
+              --health-timeout=10s \
+              --health-retries=3 \
+              --log-driver awslogs \
+              --log-opt awslogs-region=${{ secrets.AWS_REGION }} \
+              --log-opt awslogs-group=/docker/football-analytics-dev \
+              --log-opt awslogs-stream=football-analytics \
+              -p 8000:8000 \
+              ghcr.io/udito/football-analytics:main"
           ]' \
           --timeout-seconds 600 \
-          --region us-west-1 \
+          --region ${{ secrets.AWS_REGION }} \
           --output text
