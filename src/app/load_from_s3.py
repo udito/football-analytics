@@ -2,6 +2,16 @@ import os
 import json
 import psycopg2
 import boto3
+from psycopg2.extras import execute_values
+import concurrent.futures
+import threading
+
+# Global lock for safe printing and global progress
+print_lock = threading.Lock()
+progress_lock = threading.Lock()
+global_counter = 0
+
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -109,8 +119,10 @@ def load_matches():
 
     print("Done: matches loaded.")
 
+
 def load_lineups():
     print("Loading lineups...")
+
     with psycopg2.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -121,36 +133,152 @@ def load_lineups():
                 )
             """)
 
-            competitions = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=f"{S3_PREFIX}competitions.json")["Body"])
+            competitions = json.load(
+                s3.get_object(Bucket=S3_BUCKET_NAME, Key=f"{S3_PREFIX}competitions.json")["Body"]
+            )
 
             for comp in competitions:
                 comp_id = comp["competition_id"]
                 season_id = comp["season_id"]
                 match_key = f"{S3_PREFIX}matches/{comp_id}/{season_id}.json"
 
-                print(f"Loading lineups for competition {comp_id} season {season_id}...")
+                print(f"\n📂 Competition {comp_id}, Season {season_id}:")
 
                 try:
-                    matches = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=match_key)["Body"])
-                    for match in matches:
+                    matches = json.load(
+                        s3.get_object(Bucket=S3_BUCKET_NAME, Key=match_key)["Body"]
+                    )
+                    total_matches = len(matches)
+
+                    for idx, match in enumerate(matches):
                         match_id = match["match_id"]
                         key = f"{S3_PREFIX}lineups/{match_id}.json"
-                        data = json.load(s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"])
 
-                        print(f"Loading lineups for match {match_id}...")
-                        for team in data:
-                            team_name = team["team_name"]
-                            for player in team["lineup"]:
-                                cur.execute("""
+                        try:
+                            data = json.load(
+                                s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"]
+                            )
+
+                            rows_to_insert = []
+                            for team in data:
+                                team_name = team["team_name"]
+                                for player in team["lineup"]:
+                                    rows_to_insert.append((match_id, team_name, player["player_name"]))
+
+                            if rows_to_insert:
+                                execute_values(cur,
+                                    """
                                     INSERT INTO lineups (match_id, team_name, player_name)
-                                    VALUES (%s, %s, %s)
-                                """, (match_id, team_name, player["player_name"]))
-                except Exception as e:
-                    print(f"Failed to load lineups for match {match_id}: {e}")
+                                    VALUES %s
+                                    """,
+                                    rows_to_insert
+                                )
 
-    print("Done: lineups loaded.")
+                            percent = int((idx + 1) / total_matches * 100)
+                            print(f"✅ Match {match_id} loaded ({percent}%)")
+
+                        except Exception as e:
+                            print(f"⚠️ Failed to load lineups for match {match_id}: {e}")
+
+                except Exception as e:
+                    print(f"⚠️ Failed to load match list for competition {comp_id}, season {season_id}: {e}")
+
+    print("\n🎉 Done: all lineups loaded.")
+
+def load_single_match(match_info, total_matches):
+    global global_counter
+
+    comp_id, season_id, match = match_info
+    match_id = match["match_id"]
+    key = f"{S3_PREFIX}events/{match_id}.json"
+
+    try:
+        # Create new DB connection per thread
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                # Load event data from S3
+                data = json.load(
+                    s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)["Body"]
+                )
+
+                rows_to_insert = [
+                    (
+                        match_id,
+                        event.get("index"),
+                        event.get("timestamp"),
+                        event.get("type", {}).get("name")
+                    )
+                    for event in data
+                ]
+
+                if rows_to_insert:
+                    execute_values(cur,
+                        """
+                        INSERT INTO events (match_id, index, timestamp, type)
+                        VALUES %s
+                        ON CONFLICT DO NOTHING
+                        """,
+                        rows_to_insert
+                    )
+
+        with progress_lock:
+            global_counter += 1
+            progress = (global_counter / total_matches) * 100
+            with print_lock:
+                print(f"✅ Match {match_id} inserted ({global_counter}/{total_matches} - {progress:.1f}%)")
+
+    except Exception as e:
+        with print_lock:
+            print(f"⚠️ Failed to load events for match {match_id}: {e}")
 
 def load_events():
+    global global_counter
+    print("Loading events (concurrent mode)...")
+
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id SERIAL PRIMARY KEY,
+                    match_id BIGINT,
+                    index INT,
+                    timestamp TEXT,
+                    type TEXT,
+                    UNIQUE (match_id, index)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_match_index ON events(match_id, index)")
+
+    # Preload all matches to prepare job list
+    competitions = json.load(
+        s3.get_object(Bucket=S3_BUCKET_NAME, Key=f"{S3_PREFIX}competitions.json")["Body"]
+    )
+
+    match_list = []
+    for comp in competitions:
+        comp_id = comp["competition_id"]
+        season_id = comp["season_id"]
+        match_key = f"{S3_PREFIX}matches/{comp_id}/{season_id}.json"
+        try:
+            matches = json.load(
+                s3.get_object(Bucket=S3_BUCKET_NAME, Key=match_key)["Body"]
+            )
+            match_list.extend([(comp_id, season_id, m) for m in matches])
+        except Exception as e:
+            print(f"⚠️ Failed to read matches for comp {comp_id}, season {season_id}: {e}")
+
+    total_matches = len(match_list)
+    print(f"\nTotal matches to process: {total_matches}\n")
+
+    # Run concurrently
+    max_workers = 8  # You can tune this based on EC2 and RDS limits
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        executor.map(lambda m: load_single_match(m, total_matches), match_list)
+
+    print("\n🎉 Done: all events loaded (concurrently).")
+
+
+
     print("Loading events...")
     with psycopg2.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
