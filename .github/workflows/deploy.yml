@@ -23,8 +23,10 @@ jobs:
           --comment "Deploy Docker container from GHCR" \
           --targets "Key=tag:PROJECT_NAME,Values=${{ secrets.PROJECT_NAME }}" \
           --parameters 'commands=[
-            "docker stop  ${{ secrets.CONTAINER_NAME }} || true",
-            "docker rm  ${{ secrets.CONTAINER_NAME }} || true",
+            "export GHCR_PAT=$(aws ssm get-parameter --name \"/github/ghcr_pat\" --with-decryption --region '${{ secrets.AWS_REGION }}' --query \"Parameter.Value\" --output text)",
+            "echo $GHCR_PAT | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin",
+            "docker stop ${{ secrets.CONTAINER_NAME }} || true",
+            "docker rm ${{ secrets.CONTAINER_NAME }} || true",
             "docker pull ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main",
             "docker run -d --name ${{ secrets.CONTAINER_NAME }} \
               --restart unless-stopped \
@@ -37,7 +39,7 @@ jobs:
               --log-opt awslogs-group=/docker/football-analytics-dev \
               --log-opt awslogs-stream=football-analytics \
               -p 8000:8000 \
-              ghcr.io/udito/football-analytics:main"
+              ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main"
           ]' \
           --timeout-seconds 600 \
           --region ${{ secrets.AWS_REGION }} \
