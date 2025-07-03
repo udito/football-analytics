@@ -3,11 +3,6 @@ name: Publish Docker (Dev) image to GHCR
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'Dockerfile'
-      - '.github/workflows/docker-publish.yml'
-      - 'src/**'
-      - 'requirements.txt'
 
 jobs:
   build-and-push:
