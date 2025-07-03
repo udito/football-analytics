@@ -22,21 +22,10 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics
-          tags: |
-            type=sha
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-
-      - name: Build and push Docker image
+      - name: Build and push Docker image (tagged as 'main')
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main
