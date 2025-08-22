@@ -1,0 +1,46 @@
+name: Docker Publish to AWS ECR (prod)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Use your AWS access key & secret from GitHub Secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+
+      - name: Load values from SSM Parameter Store
+        id: ssm
+        run: |
+          ECR=$(aws ssm get-parameter --name "/football/ECR_URL" --with-decryption --query "Parameter.Value" --output text)
+          echo "ecr=$ECR" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/streamlit/Dockerfile
+          push: true
+          tags: ${{ steps.ssm.outputs.ecr }}:latest

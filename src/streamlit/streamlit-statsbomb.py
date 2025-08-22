@@ -13,9 +13,10 @@ st.set_page_config(page_title="Udi Toledano Football Site", layout="wide")
 # -----------------------------
 
 def get_conn_url():
-    ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-west-1"))
-    param = ssm.get_parameter(Name="/football/DATABASE_URL", WithDecryption=True)
-    DATABASE_URL = param["Parameter"]["Value"]
+    # ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-west-1"))
+    # param = ssm.get_parameter(Name="/football/DATABASE_URL", WithDecryption=True)
+    # DATABASE_URL = param["Parameter"]["Value"]
+
     return DATABASE_URL
 
 @st.cache_resource(show_spinner=False)
