@@ -1,4 +1,4 @@
-name: Docker Publish to AWS ECR (prod)
+name: Docker Publish streamlit to AWS ECR
 
 on:
   push:
@@ -40,7 +40,6 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: src/streamlit/Dockerfile
+          context: /src/streamlit/
           push: true
           tags: ${{ steps.ssm.outputs.ecr }}:latest

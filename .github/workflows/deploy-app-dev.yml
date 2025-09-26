@@ -1,4 +1,4 @@
-name: Deploy to EC2 from GHCR
+name: Deploy to EC2 Dev instance from GHCR
 
 on:
   workflow_dispatch:
