@@ -26,6 +26,6 @@ jobs:
       - name: Build and push Docker image (tagged as 'main')
         uses: docker/build-push-action@v5
         with:
-          context: /src/app/
+          context: ./src/app/
           push: true
           tags: ghcr.io/${{ secrets.GHCR_USERNAME }}/football-analytics:main
