@@ -11,11 +11,11 @@ ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-west-1"))
 param = ssm.get_parameter(Name="/football/DATABASE_URL", WithDecryption=True)
 DATABASE_URL = param["Parameter"]["Value"]
 
-@app.get("/")
+@app.get("/api")
 def read_root():
     return {"message": "Football analytics API is live!"}
 
-@app.get("/db-check")
+@app.get("/api/db-check")
 def db_check():
     try:
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
@@ -27,7 +27,7 @@ def db_check():
     except Exception as e:
         return {"db_status": "Error", "detail": str(e)}
 
-@app.get("/health")
+@app.get("/api/health")
 def health_check():
     return {"status": "ok"}
 

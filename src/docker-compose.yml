@@ -1,0 +1,16 @@
+version: "3.9"
+
+name: statsbomb-stack
+
+services:
+  app:
+    build:
+      context: ./app  
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: ./streamlit  
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
