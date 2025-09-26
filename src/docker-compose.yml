@@ -1,7 +1,4 @@
 version: "3.9"
-
-name: statsbomb-stack
-
 services:
   app:
     build:
