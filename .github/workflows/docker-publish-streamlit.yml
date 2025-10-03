@@ -1,4 +1,4 @@
-name: Docker Publish streamlit to AWS ECR
+name: Docker publish Streamlit to AWS ECR
 
 on:
   push:

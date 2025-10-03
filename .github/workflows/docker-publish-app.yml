@@ -1,4 +1,4 @@
-name: Publish Docker FastAPI app image to GHCR
+name: Docker publish FastAPI app image to GHCR
 
 on:
   workflow_dispatch:

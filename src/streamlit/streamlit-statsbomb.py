@@ -1,11 +1,11 @@
 from __future__ import annotations
-import pandas as pd
+import os
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import boto3
-import os
 from sqlalchemy import create_engine, text
 
 st.set_page_config(page_title="Udi Toledano Football Site", layout="wide")
@@ -14,11 +14,10 @@ st.set_page_config(page_title="Udi Toledano Football Site", layout="wide")
 # DB helpers
 # -----------------------------
 
-def get_conn_url():
+def get_conn_url() -> str:
     ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-west-1"))
     param = ssm.get_parameter(Name="/football/DATABASE_URL", WithDecryption=True)
-    DATABASE_URL = param["Parameter"]["Value"]
-    return DATABASE_URL
+    return param["Parameter"]["Value"]
 
 @st.cache_resource(show_spinner=False)
 def get_engine():
@@ -53,8 +52,6 @@ def load_matches() -> pd.DataFrame:
     df["match_label"] = df["match_date"].astype(str) + " — " + df["home_team"] + " vs " + df["away_team"]
     return df
 
-matches = load_matches()
-
 @st.cache_data(ttl=600)
 def comp_map() -> pd.DataFrame:
     q = """
@@ -64,6 +61,7 @@ def comp_map() -> pd.DataFrame:
     """
     return sql_df(q)
 
+matches = load_matches()
 cm = comp_map()
 
 # Resolve competition/season names for UI
@@ -73,12 +71,41 @@ comp = st.sidebar.selectbox("Competition", competitions)
 seasons = sorted(m.loc[m["competition_name"] == comp, "season_name"].dropna().unique().tolist())
 season = st.sidebar.selectbox("Season", seasons)
 
-team_candidates = sorted(pd.unique(pd.concat([
-    m.loc[(m["competition_name"]==comp)&(m["season_name"]==season), ["home_team","away_team"]].stack()
-]))).tolist()
+# -----------------------------
+# Helper: safe team list
+# -----------------------------
+def get_team_candidates(m: pd.DataFrame, comp: str, season: str) -> list[str]:
+    """
+    Return sorted, de-duplicated team names for a comp/season. Safe for NaNs/empties.
+    """
+    s = (
+        m.loc[
+            (m["competition_name"] == comp) & (m["season_name"] == season),
+            ["home_team", "away_team"],
+        ]
+        .stack(dropna=True)      # drop NaNs so they won't appear as "nan"
+        .astype(str)
+    )
+    unique_teams = pd.unique(s)  # numpy array
+    return sorted(set(unique_teams.tolist()))
+
+team_candidates = get_team_candidates(m, comp, season)
+if not team_candidates:
+    st.sidebar.warning("No teams found for this competition/season.")
+    st.stop()
+
 team = st.sidebar.selectbox("Team (focus)", team_candidates)
 
-team_matches = m[(m["competition_name"]==comp)&(m["season_name"]==season)&((m["home_team"]==team)|(m["away_team"]==team))].copy()
+team_matches = m[
+    (m["competition_name"] == comp)
+    & (m["season_name"] == season)
+    & ((m["home_team"] == team) | (m["away_team"] == team))
+].copy()
+
+if team_matches.empty:
+    st.sidebar.warning("No matches found for this team in the selected competition/season.")
+    st.stop()
+
 label_to_id = {row["match_label"]: int(row["match_id"]) for _, row in team_matches.iterrows()}
 match_label = st.sidebar.selectbox("Match", list(label_to_id.keys()))
 match_id = label_to_id[match_label]
@@ -96,16 +123,17 @@ def load_events(match_id: int) -> pd.DataFrame:
     ORDER BY index
     """
     df = sql_df(q, {"mid": match_id})
-    # minute/second extraction from timestamp "MM:SS.mmm" if present, otherwise ordinal index buckets
-    # StatsBomb timestamp usually "00:12:34.567" (HH:MM:SS.sss). We'll parse seconds.
+
+    # Parse StatsBomb-like timestamp "HH:MM:SS.sss" -> seconds
     def to_sec(ts: str) -> float:
         try:
             hh, mm, ss = ts.split(":")
-            return int(hh)*3600 + int(mm)*60 + float(ss)
+            return int(hh) * 3600 + int(mm) * 60 + float(ss)
         except Exception:
             return np.nan
+
     df["sec"] = df["timestamp"].apply(lambda x: to_sec(x) if isinstance(x, str) else np.nan)
-    df["minute"] = np.floor(df["sec"]/60.0).astype("Int64")
+    df["minute"] = np.floor(df["sec"] / 60.0).astype("Int64")
     return df
 
 events = load_events(match_id)
@@ -125,11 +153,12 @@ with T1:
     else:
         # Minute buckets; fallback to index buckets if timestamp missing
         if events["minute"].isna().all():
-            events["bucket"] = (events["index"]//10).astype(int)  # every 10 indexes as a crude progression
+            events["bucket"] = (events["index"] // 10).astype(int)  # crude progression
             xlab = "Index buckets (×10)"
         else:
             events["bucket"] = events["minute"].fillna(0).astype(int)
             xlab = "Minute"
+
         gp = events.groupby(["bucket", "type"]).size().reset_index(name="count")
         fig = px.area(gp, x="bucket", y="count", color="type", groupnorm=None, title="Events over time (stacked)")
         fig.update_layout(xaxis_title=xlab, yaxis_title="Events")
@@ -149,12 +178,13 @@ with T2:
             fig = px.bar(ct, x="type", y="count", title="Event counts by type")
             fig.update_layout(xaxis_title="Type", yaxis_title="Count")
             st.plotly_chart(fig, use_container_width=True)
+
         with c2:
             # crude minutes estimate = last minute bucket if parsed; else 90
             if events["minute"].isna().all():
                 minutes = 90
             else:
-                minutes = max(1, int(events["minute"].dropna().max())+1)
+                minutes = max(1, int(events["minute"].dropna().max()) + 1)
             per90 = ct.copy()
             per90["per90"] = per90["count"] * 90.0 / minutes
             fig2 = px.bar(per90, x="type", y="per90", title=f"Per-90 rates (assumed {minutes} minutes)")
@@ -184,7 +214,10 @@ with T3:
         for i, tname in enumerate(tnames[:2]):
             with cols[i]:
                 st.subheader(tname)
-                st.dataframe(LU[LU["team_name"] == tname][["player_name"]].reset_index(drop=True), use_container_width=True)
+                st.dataframe(
+                    LU[LU["team_name"] == tname][["player_name"]].reset_index(drop=True),
+                    use_container_width=True
+                )
 
 # -----------------------------
 # Tab 4: Raw events table
@@ -196,27 +229,36 @@ with T4:
 # Optional: Auto-detect enriched events view
 # -----------------------------
 cols = list_columns("events_enriched")
-if {"match_id","type_name","team_name","player_name","x","y"}.issubset(cols):
+if {"match_id", "type_name", "team_name", "player_name", "x", "y"}.issubset(cols):
     st.markdown("---")
     st.header("Enriched visualizations (from events_enriched view)")
     st.caption("Detected a view named `events_enriched` with locations/xG. Rendering shot map…")
+
     @st.cache_data(ttl=600)
     def load_enriched(mid: int) -> pd.DataFrame:
         q = """
         SELECT * FROM public.events_enriched WHERE match_id = :mid
         """
         return sql_df(q, {"mid": mid})
+
     E = load_enriched(match_id)
-    shots = E[E["type_name"]=="Shot"].copy()
+    shots = E[E["type_name"] == "Shot"].copy()
     if not shots.empty:
         fig = go.Figure()
         fig.add_shape(type="rect", x0=0, y0=0, x1=120, y1=80)
-        fig.add_trace(go.Scatter(x=shots["x"], y=shots["y"], mode="markers",
-                                 text=[f"xG {x:.2f}" if not pd.isna(x) else "xG n/a" for x in shots.get("shot_xg", 0)],
-                                 hovertemplate="x=%{x:.1f}, y=%{y:.1f}<br>%{text}<extra></extra>"))
-        fig.update_xaxes(range=[0,120], visible=False)
-        fig.update_yaxes(range=[0,80], visible=False, scaleanchor="x", scaleratio=1)
+        fig.add_trace(
+            go.Scatter(
+                x=shots["x"],
+                y=shots["y"],
+                mode="markers",
+                text=[f"xG {x:.2f}" if not pd.isna(x) else "xG n/a" for x in shots.get("shot_xg", 0)],
+                hovertemplate="x=%{x:.1f}, y=%{y:.1f}<br>%{text}<extra></extra>",
+            )
+        )
+        fig.update_xaxes(range=[0, 120], visible=False)
+        fig.update_yaxes(range=[0, 80], visible=False, scaleanchor="x", scaleratio=1)
         fig.update_layout(height=520, title="Shot Map (from events_enriched)")
         st.plotly_chart(fig, use_container_width=True)
 else:
-    st.sidebar.info("No events detected")
+    # Clearer message (previously said "No events detected")
+    st.sidebar.info("No `events_enriched` view detected — showing basic events only.")
