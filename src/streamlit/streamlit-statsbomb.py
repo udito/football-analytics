@@ -66,28 +66,27 @@ cm = comp_map()
 
 # Resolve competition/season names for UI
 m = matches.merge(cm, on=["competition_id", "season_id"], how="left")
-competitions = sorted(m["competition_name"].dropna().unique().tolist())
+competitions = sorted(list(pd.unique(m["competition_name"].dropna())))
 comp = st.sidebar.selectbox("Competition", competitions)
-seasons = sorted(m.loc[m["competition_name"] == comp, "season_name"].dropna().unique().tolist())
+seasons = sorted(list(pd.unique(
+    m.loc[m["competition_name"] == comp, "season_name"].dropna()
+)))
 season = st.sidebar.selectbox("Season", seasons)
 
 # -----------------------------
 # Helper: safe team list
 # -----------------------------
 def get_team_candidates(m: pd.DataFrame, comp: str, season: str) -> list[str]:
-    """
-    Return sorted, de-duplicated team names for a comp/season. Safe for NaNs/empties.
-    """
     s = (
         m.loc[
             (m["competition_name"] == comp) & (m["season_name"] == season),
             ["home_team", "away_team"],
         ]
-        .stack(dropna=True)      # drop NaNs so they won't appear as "nan"
+        .stack(dropna=True)
         .astype(str)
     )
-    unique_teams = pd.unique(s)  # numpy array
-    return sorted(set(unique_teams.tolist()))
+    # robust to ndarray/list/Series
+    return sorted(set(list(pd.unique(s))))
 
 team_candidates = get_team_candidates(m, comp, season)
 if not team_candidates:
@@ -209,7 +208,7 @@ with T3:
     if LU.empty:
         st.info("No lineups found for this match.")
     else:
-        tnames = LU["team_name"].dropna().unique().tolist()
+        tnames = list(pd.unique(LU["team_name"].dropna()))
         cols = st.columns(2)
         for i, tname in enumerate(tnames[:2]):
             with cols[i]:
