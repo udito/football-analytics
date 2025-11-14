@@ -9,6 +9,8 @@ spec:
   template:
     metadata: { labels: { app: app } }
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: app
           image: ghcr.io/udito/football-analytics:main
