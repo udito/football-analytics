@@ -16,8 +16,8 @@ spec:
           image: ghcr.io/udito/football-analytics:main
           ports: [{ containerPort: 8000 }]
           readinessProbe:
-            httpGet: { path: /health, port: 8000 }
+            httpGet: { path: /api, port: 8000 }
             initialDelaySeconds: 5
           livenessProbe:
-            httpGet: { path: /health, port: 8000 }
+            httpGet: { path: /api/health, port: 8000 }
             initialDelaySeconds: 15
