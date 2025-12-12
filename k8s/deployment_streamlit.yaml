@@ -9,11 +9,9 @@ spec:
   template:
     metadata: { labels: { app: streamlit } }
     spec:
-      imagePullSecrets:
-        - name: ghcr-pull-secret
       containers:
         - name: streamlit
-          image: STREAMLIT_IMAGE:latest
+          image: football-analytics-prod:latest
           ports: [{ containerPort: 8501 }]
           readinessProbe:
             httpGet: { path: "/", port: 8501 }
